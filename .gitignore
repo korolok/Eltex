@@ -3,6 +3,7 @@
 
 # Object files
 *.o
+*.out
 *.ko
 *.obj
 *.elf
@@ -41,6 +42,9 @@
 *.su
 *.idb
 *.pdb
+
+# Visual Studio Code
+*.vscode
 
 # Kernel Module Compile Results
 *.mod*
