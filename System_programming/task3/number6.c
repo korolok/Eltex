@@ -1,4 +1,6 @@
 #include <errno.h>
+#include <fcntl.h>
+#include <semaphore.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,14 +11,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-
-union semun {
-    int val;
-    struct semid_ds *buf;
-    unsigned short *array;
-    struct seminfo *__buf;
-};
-
+#define NAME "sem"
 static int count;
 static pid_t pid = 0;
 void listener(int sig);
@@ -25,21 +20,13 @@ int main(int argc, char *argv[]) {
     FILE *myfile;
     pid_t ppid = 0;
     key_t key;
-    int semid = 0;
+    sem_t *semid;
     int fd[2], tmp = atoi(argv[1]), rv = 0, flag = 0;
     char buf[100];
-    union semun arg;
-    struct sembuf lock_res = {0, -1, 0};
-    struct sembuf rel_res = {0, 1, 0};
     srand(time(NULL));
     pipe(fd);
-    key = ftok(".", 'v');
-    semid = semget(key, 1, 0666 | IPC_CREAT);
-    semop(semid, &rel_res, 1);
-    if (key == -1 || semid == -1) {
-        perror("ftok or semget");
-    }
-
+    semid = sem_open(NAME, O_CREAT, 0600, 1);
+    sem_post(semid);
     while (tmp != 0) {
         ppid = fork();
         if (ppid == -1) {
@@ -55,29 +42,34 @@ int main(int argc, char *argv[]) {
             write(fd[1], buf, strlen(buf) + 1);
             printf("count = %d\n", count);
             if (count == 2) {
+                sem_trywait(semid);
                 myfile = fopen("test.txt", "r");
                 while (!feof(myfile)) {
                     fscanf(myfile, "%s", buf);
                 }
                 printf("%s\n", buf);
                 fclose(myfile);
+                sem_post(semid);
             }
 
         } else {
             close(fd[1]);
             read(fd[0], buf, sizeof(buf));
-            semop(semid, &lock_res, 1);
+            sem_wait(semid);
+            // semop(semid, &lock_res, 1);
             kill(ppid, SIGUSR1);
             myfile = fopen("test.txt", "a");
             fprintf(myfile, "%s", buf);
             fprintf(myfile, "%s", "\n");
             fclose(myfile);
             kill(ppid, SIGUSR2);
-            semop(semid, &rel_res, 1);
+            // semop(semid, &rel_res, 1);
+            sem_post(semid);
         }
         tmp--;
     }
-    semctl(semid, 0, IPC_RMID);
+    sem_close(semid);
+    unlink(NAME);
     return 0;
 }
 void listener(int sig) {
